@@ -38,7 +38,7 @@
         video {
             width: 100%;
             height: 100%;
-            object-fit: contain;
+            object-fit: cover;
             pointer-events: none;
         }
 
@@ -188,7 +188,7 @@
 
             try {
                 const stream = await navigator.mediaDevices.getUserMedia({
-                    video: { facingMode: 'environment', width: { ideal: 720 }, height: { ideal: 1280 } },
+                    video: { facingMode: 'environment', width: { ideal: 480 }, height: { ideal: 640 } },
                     audio: false
                 });
                 
@@ -301,26 +301,20 @@
             
             if (answer === null || !words || words.length === 0) return;
 
-            // Calcular proporciones por el "object-fit: contain" para cuadrar perfectamente
-            const videoRatio = video.videoWidth / video.videoHeight;
-            const canvasRatio = overlayCanvas.width / overlayCanvas.height;
+            // Mapeo exacto para "object-fit: cover" (llena la pantalla recortando los bordes sobrantes)
+            const scaleX = overlayCanvas.width / video.videoWidth;
+            const scaleY = overlayCanvas.height / video.videoHeight;
+            const coverScale = Math.max(scaleX, scaleY);
+            
+            const renderWidth = video.videoWidth * coverScale;
+            const renderHeight = video.videoHeight * coverScale;
+            
+            const offsetX = (overlayCanvas.width - renderWidth) / 2;
+            const offsetY = (overlayCanvas.height - renderHeight) / 2;
 
-            let renderWidth, renderHeight, offsetX, offsetY;
-
-            if (canvasRatio > videoRatio) {
-                renderHeight = overlayCanvas.height;
-                renderWidth = renderHeight * videoRatio;
-                offsetX = (overlayCanvas.width - renderWidth) / 2;
-                offsetY = 0;
-            } else {
-                renderWidth = overlayCanvas.width;
-                renderHeight = renderWidth / videoRatio;
-                offsetX = 0;
-                offsetY = (overlayCanvas.height - renderHeight) / 2;
-            }
-
-            const scaleX = renderWidth / hiddenCanvas.width;
-            const scaleY = renderHeight / hiddenCanvas.height;
+            // Factor de escala entre el hiddenCanvas (procesado) y el video original
+            const downScale = hiddenCanvas.width / video.videoWidth;
+            const finalScale = coverScale / downScale;
 
             for (let word of words) {
                 const wordText = word.text.replace(/[^\d]/g, '');
@@ -341,10 +335,10 @@
                 const padX = 20;
                 const padY = 15;
                 
-                const x = offsetX + (word.bbox.x0 - padX) * scaleX;
-                const y = offsetY + (word.bbox.y0 - padY) * scaleY;
-                const w = (word.bbox.x1 - word.bbox.x0 + padX * 2) * scaleX;
-                const h = (word.bbox.y1 - word.bbox.y0 + padY * 2) * scaleY;
+                const x = offsetX + (word.bbox.x0 - padX) * finalScale;
+                const y = offsetY + (word.bbox.y0 - padY) * finalScale;
+                const w = (word.bbox.x1 - word.bbox.x0 + padX * 2) * finalScale;
+                const h = (word.bbox.y1 - word.bbox.y0 + padY * 2) * finalScale;
                 
                 // Fondo semi transparente
                 overlayCtx.fillStyle = isCorrect ? 'rgba(34, 197, 94, 0.3)' : 'rgba(239, 68, 68, 0.3)';
