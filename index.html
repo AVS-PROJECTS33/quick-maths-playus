@@ -42,15 +42,7 @@
             pointer-events: none;
         }
 
-        #overlay-canvas {
-            position: absolute;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            pointer-events: none;
-            z-index: 10;
-        }
+        /* Overlay eliminado */
 
         #result-section {
             height: 30vh;
@@ -101,7 +93,6 @@
     <div id="app-layout" style="display: none;">
         <div id="camera-section">
             <video id="video" autoplay playsinline webkit-playsinline muted disablePictureInPicture></video>
-            <canvas id="overlay-canvas"></canvas>
             
             <div id="rescue-btn" class="absolute inset-0 bg-black/70 hidden flex-col items-center justify-center z-40 pointer-events-auto">
                 <p class="text-white font-bold text-lg border border-white/50 px-6 py-3 rounded-full animate-pulse backdrop-blur-md">
@@ -128,8 +119,6 @@
         const setupScreen = document.getElementById('setup-screen');
         const appLayout = document.getElementById('app-layout');
         const video = document.getElementById('video');
-        const overlayCanvas = document.getElementById('overlay-canvas');
-        const overlayCtx = overlayCanvas.getContext('2d');
         const hiddenCanvas = document.getElementById('hidden-canvas');
         const hiddenCtx = hiddenCanvas.getContext('2d', { willReadFrequently: true });
         
@@ -147,7 +136,6 @@
         
         // Mantener el último resultado en pantalla un rato
         let lastAnswer = null;
-        let lastWords = [];
         let timeSinceLastSuccess = 0;
 
         async function initTesseract() {
@@ -200,14 +188,11 @@
                     appLayout.style.display = 'flex';
                     isRunning = true;
                     
-                    overlayCanvas.width = video.clientWidth;
-                    overlayCanvas.height = video.clientHeight;
-                    
-                    // Reducimos la resolución interna para que la IA sea ~3x más rápida
-                    const maxProcessingHeight = 640;
-                    const scale = Math.min(1, maxProcessingHeight / video.videoHeight);
+                    // Cortamos a la mitad superior y bajamos resolución para que la IA vuele (10x más rápido)
+                    const scale = Math.min(1, 400 / video.videoHeight);
                     hiddenCanvas.width = video.videoWidth * scale;
-                    hiddenCanvas.height = video.videoHeight * scale;
+                    // Solo el 45% superior de la cámara donde está la pregunta
+                    hiddenCanvas.height = (video.videoHeight * scale) * 0.45;
                     
                     processFrames();
                 };
@@ -224,16 +209,12 @@
                 return;
             }
 
-            // Refrescar tamaño canvas en caso de redimensión (giro de pantalla)
-            if (overlayCanvas.width !== video.clientWidth) {
-                overlayCanvas.width = video.clientWidth;
-                overlayCanvas.height = video.clientHeight;
-            }
-
-            hiddenCtx.drawImage(video, 0, 0, hiddenCanvas.width, hiddenCanvas.height);
-            
-            // Dibujado suave de las cajas (mantiene los cuadros verdes/rojos mientras procesa el siguiente frame)
-            drawOverlay(lastAnswer, lastWords);
+            // Solo dibujamos y analizamos la mitad superior del video
+            hiddenCtx.drawImage(
+                video, 
+                0, 0, video.videoWidth, video.videoHeight * 0.45,
+                0, 0, hiddenCanvas.width, hiddenCanvas.height
+            );
 
             if (!isRecognizing) {
                 isRecognizing = true;
@@ -244,13 +225,12 @@
                 // Dejar que Tesseract maneje el contraste internamente (es más seguro para texto blanco sobre botones de colores claros)
 
 
-                worker.recognize(hiddenCanvas).then(({ data: { words, text } }) => {
+                worker.recognize(hiddenCanvas).then(({ data: { text } }) => {
                     let equationAnswer = null;
                     let detectedEq = "";
                     
                     const cleanText = text.replace(/\s+/g, ' ');
                     
-                    // Buscar patrones como "7+5=?" o "4 + 93"
                     const match = cleanText.match(/(\d+)\s*([\+\-\xX\/])\s*(\d+)/);
                     
                     if (match) {
@@ -271,13 +251,10 @@
                         resultDisplay.classList.replace('text-zinc-500', 'text-blue-500');
                         
                         lastAnswer = equationAnswer;
-                        lastWords = words;
                         timeSinceLastSuccess = Date.now();
                     } else {
-                        // Si ha pasado mucho tiempo sin detectar, limpiar
                         if (Date.now() - timeSinceLastSuccess > 2000) {
                             lastAnswer = null;
-                            lastWords = [];
                             equationDisplay.textContent = "---";
                             resultDisplay.textContent = "?";
                             resultDisplay.classList.replace('text-blue-500', 'text-zinc-500');
@@ -296,60 +273,7 @@
             requestAnimationFrame(processFrames);
         }
 
-        function drawOverlay(answer, words) {
-            overlayCtx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
-            
-            if (answer === null || !words || words.length === 0) return;
-
-            // Mapeo exacto para "object-fit: cover" (llena la pantalla recortando los bordes sobrantes)
-            const scaleX = overlayCanvas.width / video.videoWidth;
-            const scaleY = overlayCanvas.height / video.videoHeight;
-            const coverScale = Math.max(scaleX, scaleY);
-            
-            const renderWidth = video.videoWidth * coverScale;
-            const renderHeight = video.videoHeight * coverScale;
-            
-            const offsetX = (overlayCanvas.width - renderWidth) / 2;
-            const offsetY = (overlayCanvas.height - renderHeight) / 2;
-
-            // Factor de escala entre el hiddenCanvas (procesado) y el video original
-            const downScale = hiddenCanvas.width / video.videoWidth;
-            const finalScale = coverScale / downScale;
-
-            for (let word of words) {
-                const wordText = word.text.replace(/[^\d]/g, '');
-                if (!wordText) continue;
-                
-                const num = parseInt(wordText);
-                
-                // Ignorar los números de la ecuación (normalmente en la mitad superior de la pantalla)
-                if (word.bbox.y0 < hiddenCanvas.height * 0.45) continue;
-                
-                const isCorrect = (num === answer);
-                
-                // Dibujar bordes
-                overlayCtx.strokeStyle = isCorrect ? '#22c55e' : '#ef4444';
-                overlayCtx.lineWidth = 6;
-                
-                // Expandir la caja
-                const padX = 20;
-                const padY = 15;
-                
-                const x = offsetX + (word.bbox.x0 - padX) * finalScale;
-                const y = offsetY + (word.bbox.y0 - padY) * finalScale;
-                const w = (word.bbox.x1 - word.bbox.x0 + padX * 2) * finalScale;
-                const h = (word.bbox.y1 - word.bbox.y0 + padY * 2) * finalScale;
-                
-                // Fondo semi transparente
-                overlayCtx.fillStyle = isCorrect ? 'rgba(34, 197, 94, 0.3)' : 'rgba(239, 68, 68, 0.3)';
-                
-                // Dibujar rectángulo redondeado
-                overlayCtx.beginPath();
-                overlayCtx.roundRect(x, y, w, h, 16);
-                overlayCtx.fill();
-                overlayCtx.stroke();
-            }
-        }
+        // Dibujado en pantalla eliminado a petición del usuario
     </script>
 </body>
 </html>
