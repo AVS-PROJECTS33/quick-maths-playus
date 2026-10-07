@@ -38,7 +38,7 @@
         video {
             width: 100%;
             height: 100%;
-            object-fit: cover;
+            object-fit: contain;
             pointer-events: none;
         }
 
@@ -202,8 +202,12 @@
                     
                     overlayCanvas.width = video.clientWidth;
                     overlayCanvas.height = video.clientHeight;
-                    hiddenCanvas.width = video.videoWidth;
-                    hiddenCanvas.height = video.videoHeight;
+                    
+                    // Reducimos la resolución interna para que la IA sea ~3x más rápida
+                    const maxProcessingHeight = 640;
+                    const scale = Math.min(1, maxProcessingHeight / video.videoHeight);
+                    hiddenCanvas.width = video.videoWidth * scale;
+                    hiddenCanvas.height = video.videoHeight * scale;
                     
                     processFrames();
                 };
@@ -297,8 +301,26 @@
             
             if (answer === null || !words || words.length === 0) return;
 
-            const scaleX = overlayCanvas.width / hiddenCanvas.width;
-            const scaleY = overlayCanvas.height / hiddenCanvas.height;
+            // Calcular proporciones por el "object-fit: contain" para cuadrar perfectamente
+            const videoRatio = video.videoWidth / video.videoHeight;
+            const canvasRatio = overlayCanvas.width / overlayCanvas.height;
+
+            let renderWidth, renderHeight, offsetX, offsetY;
+
+            if (canvasRatio > videoRatio) {
+                renderHeight = overlayCanvas.height;
+                renderWidth = renderHeight * videoRatio;
+                offsetX = (overlayCanvas.width - renderWidth) / 2;
+                offsetY = 0;
+            } else {
+                renderWidth = overlayCanvas.width;
+                renderHeight = renderWidth / videoRatio;
+                offsetX = 0;
+                offsetY = (overlayCanvas.height - renderHeight) / 2;
+            }
+
+            const scaleX = renderWidth / hiddenCanvas.width;
+            const scaleY = renderHeight / hiddenCanvas.height;
 
             for (let word of words) {
                 const wordText = word.text.replace(/[^\d]/g, '');
@@ -316,11 +338,11 @@
                 overlayCtx.lineWidth = 6;
                 
                 // Expandir la caja
-                const padX = 30;
-                const padY = 20;
+                const padX = 20;
+                const padY = 15;
                 
-                const x = (word.bbox.x0 - padX) * scaleX;
-                const y = (word.bbox.y0 - padY) * scaleY;
+                const x = offsetX + (word.bbox.x0 - padX) * scaleX;
+                const y = offsetY + (word.bbox.y0 - padY) * scaleY;
                 const w = (word.bbox.x1 - word.bbox.x0 + padX * 2) * scaleX;
                 const h = (word.bbox.y1 - word.bbox.y0 + padY * 2) * scaleY;
                 
@@ -337,4 +359,3 @@
     </script>
 </body>
 </html>
-
