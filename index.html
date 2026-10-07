@@ -188,11 +188,10 @@
                     appLayout.style.display = 'flex';
                     isRunning = true;
                     
-                    // Cortamos a la mitad superior y bajamos resolución para que la IA vuele (10x más rápido)
+                    // Capturamos toda la pantalla (pero escalada) para que no importe dónde esté la ecuación
                     const scale = Math.min(1, 400 / video.videoHeight);
                     hiddenCanvas.width = video.videoWidth * scale;
-                    // Solo el 45% superior de la cámara donde está la pregunta
-                    hiddenCanvas.height = (video.videoHeight * scale) * 0.45;
+                    hiddenCanvas.height = video.videoHeight * scale;
                     
                     processFrames();
                 };
@@ -209,10 +208,9 @@
                 return;
             }
 
-            // Solo dibujamos y analizamos la mitad superior del video
+            // Dibujamos y analizamos todo el video
             hiddenCtx.drawImage(
                 video, 
-                0, 0, video.videoWidth, video.videoHeight * 0.45,
                 0, 0, hiddenCanvas.width, hiddenCanvas.height
             );
 
